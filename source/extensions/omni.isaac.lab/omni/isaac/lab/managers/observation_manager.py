@@ -242,8 +242,10 @@ class ObservationManager(ManagerBase):
             )
         # iterate over all the terms in each group
         group_term_names = self._group_obs_term_names[group_name]
+        #print(f"group_term_names:{group_term_names} \n")
         # buffer to store obs per group
         group_obs = dict.fromkeys(group_term_names, None)
+        
         # read attributes for each term
         obs_terms = zip(group_term_names, self._group_obs_term_cfgs[group_name])
 
@@ -251,6 +253,7 @@ class ObservationManager(ManagerBase):
         for name, term_cfg in obs_terms:
             # compute term's value
             obs: torch.Tensor = term_cfg.func(self._env, **term_cfg.params).clone()
+            #print(f"obs:{obs}")
             # apply post-processing
             if term_cfg.modifiers is not None:
                 for modifier in term_cfg.modifiers:
@@ -263,6 +266,8 @@ class ObservationManager(ManagerBase):
                 obs = obs.mul_(term_cfg.scale)
             # add value to list
             group_obs[name] = obs
+
+            # print(f"group_obs:{group_obs} \n")
 
         # concatenate all observations in the group together
         if self._group_obs_concatenate[group_name]:

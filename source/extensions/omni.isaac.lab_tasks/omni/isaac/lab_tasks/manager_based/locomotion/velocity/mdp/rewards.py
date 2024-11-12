@@ -38,9 +38,17 @@ def feet_air_time(
     # compute the reward
     first_contact = contact_sensor.compute_first_contact(env.step_dt)[:, sensor_cfg.body_ids]
     last_air_time = contact_sensor.data.last_air_time[:, sensor_cfg.body_ids]
+   
     reward = torch.sum((last_air_time - threshold) * first_contact, dim=1)
     # no reward for zero command
     reward *= torch.norm(env.command_manager.get_command(command_name)[:, :2], dim=1) > 0.1
+    #print(f"body_names: {sensor_cfg.body_names}")
+    # print(f"first_contact:{first_contact}\n")
+    # print(f"last_air_time:{last_air_time}\n")
+    # print(f"current time : {contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids]}")
+    #print(f"body_ids:{sensor_cfg.body_ids}\n")
+    # index = [4,8,14,18]
+    # print(f"currenct contact time:{contact_sensor.data.current_air_time} + {contact_sensor.data.current_air_time[:,index]}")
     return reward
 
 
@@ -102,4 +110,114 @@ def track_ang_vel_z_world_exp(
     # extract the used quantities (to enable type-hinting)
     asset = env.scene[asset_cfg.name]
     ang_vel_error = torch.square(env.command_manager.get_command(command_name)[:, 2] - asset.data.root_ang_vel_w[:, 2])
+    # print(f"sudo {asset.data.root_ang_vel_w[:, 2]}")
+    # print(f"xy vel: {env.command_manager.get_command(command_name)[:, 2]}")
+
     return torch.exp(-ang_vel_error / std**2)
+
+def height_penalty(env, target_height: float = 0.25, weight: float = 1.0, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+
+    # 获取机器人的基座高度
+    base_height = env.scene[asset_cfg.name].data.root_pos_w[:, 2]
+    # 计算基座高度与目标高度之间的偏差
+    penalty = torch.abs(base_height - target_height) * weight
+
+    # joint_velocity = env.scene[asset_cfg.name].data.joint_vel
+    # print(f"关节速度是：{joint_velocity} ")
+    # print(f"joint name: {env.scene[asset_cfg.name].data.joint_names}")
+    # print(f"top4: {joint_velocity[:,:4]}")
+
+    # print(f"Weight value used for height penalty: {weight}")
+    # print(f"penalty: {penalty}")
+    return penalty
+
+def height_penalty_toolow(env, min_height: float = 0.55, weight: float = -2.0, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    """Penalty for base height being too low, to prevent the robot from collapsing on the ground."""
+    # 获取机器人的基座高度
+    base_height = env.scene[asset_cfg.name].data.root_pos_w[:, 2]
+    # 计算低于最小高度的部分
+    height_diff = torch.clamp(min_height - base_height, min=0.0)
+    # 计算惩罚值
+    penalty = height_diff * weight
+    return penalty
+
+def diagonal_gait_reward(env: ManagerBasedRLEnv, command_name: str, sensor_cfg: SceneEntityCfg, threshold: float
+) -> torch.Tensor:
+    """
+    Reward for encouraging diagonal gait.
+
+    This function rewards the agent for keeping diagonal feet (e.g., left front and right hind, 
+    right front and left hind) in contact with the ground or in the air simultaneously, which encourages
+    a diagonal gait.
+
+    Args:
+        env: The reinforcement learning environment.
+        command_name: The name of the command used to determine if the agent should move.
+        sensor_cfg: The configuration for the contact sensors of the feet.
+        weight: The weight of the reward.
+
+    Returns:
+        A tensor representing the reward for diagonal gait.
+    """
+    # 获取接触传感器的数据
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+
+    first_contact = contact_sensor.data.current_contact_time[:,sensor_cfg.body_ids]
+
+    # 假设有四条腿，分别编号为 0: 左前腿, 1: 右前腿, 2: 左后腿, 3: 右后腿
+    left_front = first_contact[:, 0] > 0.0
+    right_front = first_contact[:, 1] > 0.0
+    left_hind = first_contact[:, 2] > 0.0
+    right_hind = first_contact[:, 3] > 0.0
+
+    # 鼓励对角脚同时接触地面
+    diagonal_contact_1 = left_front * right_hind
+    diagonal_contact_2 = right_front * left_hind
+    
+    # 计算奖励值
+    reward = (diagonal_contact_1 + diagonal_contact_2)
+
+    # no reward for zero command
+    reward *= torch.norm(env.command_manager.get_command(command_name)[:, :2], dim=1) > 0.05
+    return reward
+
+def hip_movement_penalty(env, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"), weight: float = -0.5) -> torch.Tensor:
+
+    """
+    Penalty for hip joint movement during straight walking to avoid unnatural gait.
+
+    This function penalizes the agent for excessive movement of the hip joints during straight walking,
+    which helps in preventing unnatural gaits like the "duck walk" or excessive external rotation.
+
+    Args:
+        env: The reinforcement learning environment.
+        sensor_cfg: The configuration for the joints of the feet.
+        weight: The weight of the penalty.
+
+    Returns:
+        A tensor representing the penalty for hip joint movement.
+    """
+    # root_lin_vel_w
+    velocity_xy = env.scene[asset_cfg.name].data.root_lin_vel_w[:,:2]
+    hip_joint_velocity = env.scene[asset_cfg.name].data.joint_vel[:,:4]
+    # root_lin_vel_x = command_velocity[0]
+    # root_lin_vel_y = command_velocity[1]
+    # print(f"关节速度是：{joint_velocity} ")
+    # print(f"joint name: {env.scene[asset_cfg.name].data.joint_names}")
+    # 计算惩罚值
+    
+    movement_condition = torch.abs(velocity_xy[:, 0]) / (torch.abs(velocity_xy[:, 1]) + 1e-6) > 1.3
+    # excessive_hip_movement = torch.abs(hip_joint_velocity) > 0.1  # 髋关节角速度阈值
+    # hip_movement_penalty = torch.sum(excessive_hip_movement.float() * torch.abs(hip_joint_velocity), dim=1) * movement_condition.float()
+
+    
+    hip_movement_penalty = torch.sum(torch.abs(hip_joint_velocity), dim=1) * movement_condition.float()
+
+    # 返回惩罚值
+    penalty = hip_movement_penalty * weight
+    # hip_movement_penalty = torch.sum(torch.abs(hip_joint_velocity), dim=1) * movement_condition.float()
+
+    # # 返回惩罚值
+    # penalty = hip_movement_penalty * weight
+
+    return penalty

@@ -97,6 +97,7 @@ def main():
     # load previously trained model
     ppo_runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
     ppo_runner.load(resume_path)
+    #print(f"ppo_runner is : {ppo_runner}")
 
     # obtain the trained policy for inference
     policy = ppo_runner.get_inference_policy(device=env.unwrapped.device)
@@ -119,8 +120,10 @@ def main():
         with torch.inference_mode():
             # agent stepping
             actions = policy(obs)
+            #print(f"\n action is:{actions} \n")
             # env stepping
             obs, _, _, _ = env.step(actions)
+            #print(f"\n obs is:{obs} \n")
         if args_cli.video:
             timestep += 1
             # Exit the play loop after recording one video

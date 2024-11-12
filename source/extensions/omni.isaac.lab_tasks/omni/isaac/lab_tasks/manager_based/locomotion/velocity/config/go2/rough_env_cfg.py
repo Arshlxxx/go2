@@ -11,6 +11,8 @@ from omni.isaac.lab_tasks.manager_based.locomotion.velocity.velocity_env_cfg imp
 # Pre-defined configs
 ##
 from omni.isaac.lab_assets.unitree import UNITREE_GO2_CFG  # isort: skip
+#from omni.isaac.lab_assets.unitree import UNITREE_Z1_CFG  # isort: skip
+from omni.isaac.lab_assets.unitree import UNITREE_GO2andZ1_CFG  # isort: skip
 
 
 @configclass
@@ -19,8 +21,11 @@ class UnitreeGo2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # post init of parent
         super().__post_init__()
 
+        #self.scene.robot = UNITREE_GO2andZ1_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.scene.robot = UNITREE_GO2_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.scene.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/base"
+        
+
         # scale down the terrains because the robot is small
         self.scene.terrain.terrain_generator.sub_terrains["boxes"].grid_height_range = (0.025, 0.1)
         self.scene.terrain.terrain_generator.sub_terrains["random_rough"].noise_range = (0.01, 0.06)
@@ -49,7 +54,9 @@ class UnitreeGo2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
 
         # rewards
         self.rewards.feet_air_time.params["sensor_cfg"].body_names = ".*_foot"
-        self.rewards.feet_air_time.weight = 0.01
+        self.rewards.feet_air_time.weight = 0.1
+        self.rewards.height_penalty.weight = -1.0
+        self.rewards.diagonal_gait_reward.weight = 0.05
         self.rewards.undesired_contacts = None
         self.rewards.dof_torques_l2.weight = -0.0002
         self.rewards.track_lin_vel_xy_exp.weight = 1.5
